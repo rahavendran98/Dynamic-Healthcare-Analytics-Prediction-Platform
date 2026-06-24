@@ -1,0 +1,49 @@
+# Virtual environments
+healthvenv/
+venv/
+env/
+.venv/
+*.egg-info/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Distribution / packaging
+dist/
+build/
+*.egg
+
+# Environment variables
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# Logs
+logs/
+*.log
+
+# Model artifacts (large binaries — add specific ones to track if needed)
+models/*.pkl
+models/*.joblib
+models/*.h5
+models/*.pt
+models/*.pth
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Reports (generated output)
+reports/figures/
