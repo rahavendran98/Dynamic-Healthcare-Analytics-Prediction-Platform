@@ -15,7 +15,7 @@ logger = setup_logger(__name__)
 
 
 
-# 1. FEATURE ENGINEERING
+# FEATURE ENGINEERING
 
 def engineer_features(
     df: pd.DataFrame,
@@ -75,7 +75,7 @@ def engineer_features(
 
 
 
-# 2. ENCODING
+#  ENCODING
 
 def encode_features(
     df: pd.DataFrame,
@@ -139,7 +139,7 @@ def encode_features(
 
 
 
-# 3. TRAIN / TEST SPLIT
+#  TRAIN / TEST SPLIT
 
 def split_dataset(
     df: pd.DataFrame,
@@ -182,26 +182,16 @@ def split_dataset(
     return X_train, X_test, y_train, y_test
 
 
-# ------------------------------------------------------------------ #
-# 4a. SCALING (train/test split-aware) — used by the pipeline
-# ------------------------------------------------------------------ #
+
+# SCALING (train/test split-aware)
+
 def scale_features_split(
     X_train: pd.DataFrame,
     X_test: pd.DataFrame,
     min_unique: int = 15,
     verbose: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame, StandardScaler, list]:
-    """Scale continuous columns: fit StandardScaler on train, apply to test.
-
-    Args:
-        X_train: Training features.
-        X_test: Test features.
-        min_unique: Minimum unique values for a column to be treated as continuous.
-        verbose: Whether to print scaling info.
-
-    Returns:
-        Scaled X_train, scaled X_test, the fitted scaler (or None), and the scaled columns.
-    """
+    
     X_train = X_train.copy()
     X_test = X_test.copy()
 
@@ -228,27 +218,15 @@ def scale_features_split(
     return X_train, X_test, scaler, continuous_cols
 
 
-# ------------------------------------------------------------------ #
-# 4b. SCALING (single-DataFrame variant) — kept from notebook
-# ------------------------------------------------------------------ #
+
+# SCALING (single-DataFrame variant) — kept from notebook
+
 def scale_features(
     df: pd.DataFrame,
     target_col: str,
     min_unique: int = 15,
 ) -> tuple[pd.DataFrame, dict, StandardScaler]:
-    """Scale continuous columns of a single DataFrame (fit + transform together).
-
-    Note: prefer scale_features_split inside the pipeline (leakage-safe). This
-    single-DataFrame variant is retained from the notebook for standalone use.
-
-    Args:
-        df: Input DataFrame.
-        target_col: Target column (never scaled).
-        min_unique: Minimum unique values for a column to be treated as continuous.
-
-    Returns:
-        Scaled DataFrame, a report dict, and the fitted scaler (or None).
-    """
+    
     df = df.copy()
 
     continuous_cols = [
@@ -270,9 +248,9 @@ def scale_features(
     return df, report, scaler
 
 
-# ------------------------------------------------------------------ #
-# 5. FEATURE SELECTION (Mutual Information)
-# ------------------------------------------------------------------ #
+
+#  FEATURE SELECTION (Mutual Information)
+
 def select_features_mi(
     X_train_fs: pd.DataFrame,
     X_test_fs: pd.DataFrame,
@@ -282,23 +260,6 @@ def select_features_mi(
     random_state: int = 42,
     verbose: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
-    """Select features by Mutual Information (fit on train, applied to test).
-
-    Features with MI above the threshold are kept. If fewer than min_features
-    survive, all features are kept (fallback) to avoid crippling model comparison.
-
-    Args:
-        X_train_fs: Training features.
-        X_test_fs: Test features.
-        y_train: Training target.
-        mi_threshold: MI score above which a feature is kept.
-        min_features: Minimum features required before the fallback triggers.
-        random_state: Seed for reproducibility.
-        verbose: Whether to print the MI table.
-
-    Returns:
-        Reduced X_train, reduced X_test, and a report dict.
-    """
     if X_train_fs.shape[1] == 0:
         logger.info("MI selection skipped: no columns.")
         return X_train_fs, X_test_fs, {
@@ -360,9 +321,9 @@ def select_features_mi(
         }
 
 
-# ------------------------------------------------------------------ #
-# 6. ORCHESTRATOR
-# ------------------------------------------------------------------ #
+
+#  ORCHESTRATOR
+
 def run_pipeline(
     df: pd.DataFrame,
     target_col: str,
@@ -374,26 +335,7 @@ def run_pipeline(
     mi_threshold: float = 0.0,
     min_features: int = 5,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, dict, dict]:
-    """Run the full feature pipeline and persist splits + artifacts.
-
-    Steps: engineer -> encode -> split (before scaling) -> scale (train-fit) ->
-    MI feature selection. Saves the train/test splits, the preprocessing artifacts
-    (encoders, scaler, final feature order), and the reports.
-
-    Args:
-        df: Cleaned input DataFrame.
-        target_col: Target column name.
-        processed_dir: Where to save the train/test splits.
-        models_dir: Where to save the artifacts and reports.
-        test_size: Fraction held out for testing.
-        random_state: Seed for reproducibility.
-        min_unique: Minimum unique values for a column to be treated as continuous.
-        mi_threshold: MI score above which a feature is kept.
-        min_features: Minimum features before the MI fallback triggers.
-
-    Returns:
-        X_train, X_test, y_train, y_test, artifacts dict, reports dict.
-    """
+    
     logger.info(f"Pipeline started. Input shape: {df.shape}, target: {target_col}")
     reports = {}
 
@@ -435,8 +377,10 @@ def run_pipeline(
         y_train.to_pickle(os.path.join(processed_dir, "y_train.pkl"))
         y_test.to_pickle(os.path.join(processed_dir, "y_test.pkl"))
 
-        joblib.dump(artifacts, os.path.join(models_dir, "preprocessing_artifacts.pkl"))
-        joblib.dump(reports, os.path.join(models_dir, "feature_selection_report.pkl"))
+        
+        joblib.dump(artifacts, os.path.join(models_dir, f"{target_col}_preprocessing_artifacts.pkl"))
+        joblib.dump(reports, os.path.join(models_dir, f"{target_col}_feature_selection_report.pkl"))
+
 
         logger.info(f"Saved splits -> {processed_dir}")
         logger.info(f"Saved artifacts -> {models_dir}/preprocessing_artifacts.pkl "
