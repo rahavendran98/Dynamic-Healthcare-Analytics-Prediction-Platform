@@ -2,6 +2,7 @@
 
 
 import os
+import json
 import joblib
 import pandas as pd
 import numpy as np
@@ -32,7 +33,7 @@ def detect_imbalance(y: pd.Series, threshold: float = IMBALANCE_THRESHOLD) -> di
     counts = y.value_counts()
     props = y.value_counts(normalize=True)
     minority_share = props.min()
-    is_imbalanced = minority_share < threshold
+    is_imbalanced = bool(minority_share < threshold)
 
     report = {
         "class_counts": counts.to_dict(),
@@ -46,6 +47,31 @@ def detect_imbalance(y: pd.Series, threshold: float = IMBALANCE_THRESHOLD) -> di
     logger.info(f"Imbalance check: minority_share={report['minority_share']}, "
                 f"is_imbalanced={is_imbalanced}, class_weight={report['class_weight']}")
     return report
+
+
+
+#  SAVE IMBALANCE REPORT
+
+def save_imbalance_report(
+    imbalance_report: dict,
+    output_path: str = "reports/imbalance_report.json",
+) -> str:
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    serializable = {
+        "class_counts": {str(k): int(v) for k, v in imbalance_report["class_counts"].items()},
+        "class_proportions": {str(k): v for k, v in imbalance_report["class_proportions"].items()},
+        "n_classes": imbalance_report["n_classes"],
+        "minority_share": imbalance_report["minority_share"],
+        "is_imbalanced": imbalance_report["is_imbalanced"],
+        "class_weight": imbalance_report["class_weight"],
+    }
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(serializable, f, indent=2)
+
+    logger.info(f"Imbalance report saved -> {output_path}")
+    return output_path
 
 
 
@@ -299,6 +325,7 @@ def run_training_pipeline(
     logger.info(f"Model training pipeline started. Target: {target_col}")
 
     imbalance_report = detect_imbalance(y_train)
+    save_imbalance_report(imbalance_report, os.path.join(reports_dir, f"{target_col}_imbalance_report.json"))
 
     models = build_models(class_weight=imbalance_report["class_weight"], random_state=random_state)
     trained_models, training_report = train_models(models, X_train, y_train, imbalance_report)

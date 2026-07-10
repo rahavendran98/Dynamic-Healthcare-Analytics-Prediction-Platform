@@ -1,9 +1,11 @@
 """Feature Engineering Module."""
 
 import os
+import json
 import joblib
 import pandas as pd
 import numpy as np
+
 
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import train_test_split
@@ -93,7 +95,7 @@ def encode_features(
             le = LabelEncoder()
             df[target_col] = le.fit_transform(df[target_col])
             encoders["__target__"] = le
-            report["target_encoded"] = dict(zip(le.classes_, le.transform(le.classes_)))
+            report["target_encoded"] = {k: int(v) for k, v in zip(le.classes_, le.transform(le.classes_))}
 
         # Split categorical columns 
         cat_cols = [
@@ -247,6 +249,46 @@ def scale_features(
     report["final_shape"] = df.shape
     return df, report, scaler
 
+#  CORRELATION-BASED ELIMINATION
+
+def remove_correlated_features(
+    X_train: pd.DataFrame,
+    X_test: pd.DataFrame,
+    threshold: float = 0.9,
+) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+
+    df_corr = X_train.corr().abs()
+    upper = df_corr.where(np.triu(np.ones(df_corr.shape, dtype=bool), k=1))
+
+    to_drop = set()
+    drop_info = {}
+
+    try:
+        for col in upper.columns:
+            high_corr = upper[col][upper[col] > threshold]
+            for row, val in high_corr.items():
+                if row in to_drop or col in to_drop:
+                    continue
+                # drop whichever of the pair has lower variance (less spread = less informative)
+                drop_col = col if X_train[col].var() <= X_train[row].var() else row
+                keep_col = row if drop_col == col else col
+                to_drop.add(drop_col)
+                drop_info[drop_col] = {"correlated_with": keep_col, "correlation": round(float(val), 3)}
+
+        X_train = X_train.drop(columns=list(to_drop))
+        X_test = X_test.drop(columns=list(to_drop))
+
+        logger.info(f"Correlation elimination (>{threshold}): dropped {len(to_drop)} -> {X_train.shape}")
+    except Exception as e:
+        logger.error(f"Error in remove_correlated_features: {e}")
+
+    report = {
+        "threshold": threshold,
+        "dropped": drop_info,
+        "kept": [c for c in X_train.columns],
+    }
+    return X_train, X_test, report
+
 
 
 #  FEATURE SELECTION (Mutual Information)
@@ -322,6 +364,46 @@ def select_features_mi(
 
 
 
+#  SAVE REPORT
+
+def save_feature_selection_report(
+    reports: dict,
+    output_path: str = "reports/feature_selection_report.json",
+) -> str:
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    serializable = {
+        "engineering": {
+            "dropped": reports["engineering"]["dropped"],
+            "datetime_expanded": reports["engineering"]["datetime_expanded"],
+            "final_shape": list(reports["engineering"]["final_shape"]),
+        },
+        "encoding": {
+            "target_encoded": reports["encoding"]["target_encoded"],
+            "binary_encoded": reports["encoding"]["binary_encoded"],
+            "onehot_encoded": reports["encoding"]["onehot_encoded"],
+            "freq_encoded": reports["encoding"].get("freq_encoded", []),
+            "final_shape": list(reports["encoding"]["final_shape"]),
+        },
+        "correlation": reports["correlation"],
+        "mutual_info": {
+            "mi_threshold": reports["mutual_info"]["mi_threshold"],
+            "min_features": reports["mutual_info"]["min_features"],
+            "n_informative": reports["mutual_info"]["n_informative"],
+            "selected_features": reports["mutual_info"]["selected_features"],
+            "dropped": reports["mutual_info"]["dropped"],
+            "fallback_used": reports["mutual_info"]["fallback_used"],
+        },
+    }
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(serializable, f, indent=2)
+
+    logger.info(f"Feature selection report saved -> {output_path}")
+    return output_path
+
+
+
 #  ORCHESTRATOR
 
 def run_pipeline(
@@ -329,12 +411,14 @@ def run_pipeline(
     target_col: str,
     processed_dir: str = "../data/processed",
     models_dir: str = "../models",
+    reports_dir: str = "../reports",
     test_size: float = 0.2,
     random_state: int = 42,
     min_unique: int = 15,
     mi_threshold: float = 0.0,
     min_features: int = 5,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, dict, dict]:
+    corr_threshold: float = 0.9
     
     logger.info(f"Pipeline started. Input shape: {df.shape}, target: {target_col}")
     reports = {}
@@ -348,9 +432,13 @@ def run_pipeline(
         df, target_col, test_size=test_size, random_state=random_state, verbose=False
     )
 
-    # scale (fit on train) -> MI selection
+  
+    # scale (fit on train) -> correlation elimination -> MI selection
     X_train, X_test, scaler, scaled_cols = scale_features_split(
         X_train, X_test, min_unique=min_unique, verbose=False
+    )
+    X_train, X_test, reports["correlation"] = remove_correlated_features(
+        X_train, X_test, threshold=corr_threshold
     )
     X_train_fs, X_test_fs, reports["mutual_info"] = select_features_mi(
         X_train, X_test, y_train,
@@ -380,7 +468,7 @@ def run_pipeline(
         
         joblib.dump(artifacts, os.path.join(models_dir, f"{target_col}_preprocessing_artifacts.pkl"))
         joblib.dump(reports, os.path.join(models_dir, f"{target_col}_feature_selection_report.pkl"))
-
+        save_feature_selection_report(reports, os.path.join(reports_dir, "feature_selection_report.json"))
 
         logger.info(f"Saved splits -> {processed_dir}")
         logger.info(f"Saved artifacts -> {models_dir}/preprocessing_artifacts.pkl "

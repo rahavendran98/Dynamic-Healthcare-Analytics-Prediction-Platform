@@ -96,17 +96,29 @@ def preprocess_for_prediction(df_raw: pd.DataFrame, artifacts: dict) -> tuple[pd
             bool_cols = df.select_dtypes(include="bool").columns
             df[bool_cols] = df[bool_cols].astype(int)
 
+        # Scale continuous columns with the scaler fit during training. This must
+        # happen before reindexing to feature_columns: the scaler was fit on the
+        # full pre-selection continuous set, and some of those columns may have
+        # since been dropped by correlation/MI feature selection. sklearn requires
+        # transform() to see exactly the columns seen at fit time, so we rebuild
+        # that full set here (filling anything truly absent with 0) rather than
+        # the post-selection subset.
+        scaler = artifacts.get("scaler")
+        scaled_columns = artifacts.get("scaled_columns") or []
+        if scaler is not None and scaled_columns:
+            scale_input = df.reindex(columns=scaled_columns, fill_value=0)
+            scaled_values = pd.DataFrame(
+                scaler.transform(scale_input), columns=scaled_columns, index=df.index
+            )
+            for col in scaled_columns:
+                if col in df.columns:
+                    df[col] = scaled_values[col]
+
         # Align to the exact feature columns/order the model was trained on
         feature_columns = artifacts["feature_columns"]
         report["missing_raw_columns"] = [c for c in feature_columns if c not in df.columns]
         report["extra_raw_columns"] = [c for c in df.columns if c not in feature_columns]
         df = df.reindex(columns=feature_columns, fill_value=0)
-
-        # Scale continuous columns with the scaler fit during training
-        scaler = artifacts.get("scaler")
-        scaled_columns = [c for c in (artifacts.get("scaled_columns") or []) if c in df.columns]
-        if scaler is not None and scaled_columns:
-            df[scaled_columns] = scaler.transform(df[scaled_columns])
 
         logger.info(f"Preprocessed unseen data for prediction -> {df.shape}")
     except Exception as e:

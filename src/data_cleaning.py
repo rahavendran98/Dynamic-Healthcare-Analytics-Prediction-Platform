@@ -1,10 +1,6 @@
-"""Data Cleaning Module.
-
-Provides dynamic cleaning for any healthcare dataset:
-missing value treatment, duplicate removal, and outlier capping.
-Works regardless of column names or data types.
-"""
-
+"""Data Cleaning Module."""
+import os
+import json
 import pandas as pd
 from utilities import setup_logger
 
@@ -139,3 +135,30 @@ def clean_dataset(
     report["final_shape"] = df.shape
     logger.info(f"Cleaning finished. Output shape: {df.shape}")
     return df, report
+
+def save_cleaning_report(report: dict, output_path: str = "reports/cleaning_report.json") -> str:
+    
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    serializable = {
+        "original_shape": list(report["original_shape"]),
+        "final_shape": list(report["final_shape"]),
+        "missing": {
+            "dropped_columns": report["missing"]["dropped_columns"],
+            "filled_columns": {
+                col: {"method": info["method"], "pct_filled": info["pct_filled"]}
+                for col, info in report["missing"]["filled_columns"].items()
+            },
+        },
+        "duplicates": report["duplicates"],
+        "outliers": {
+            col: {"outliers": info["outliers"]}
+            for col, info in report["outliers"].items()
+        },
+    }
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(serializable, f, indent=2)
+
+    logger.info(f"Cleaning report saved -> {output_path}")
+    return output_path

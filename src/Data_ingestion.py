@@ -93,3 +93,12 @@ def analyze_dataset(df: pd.DataFrame) -> Optional[dict]:
     except Exception as e:
         print(f"Error during analysis: {e}")
         return None
+    
+def set_target_column(df: pd.DataFrame, target_col: str) -> str:
+    
+    if target_col not in df.columns:
+        raise ValueError(
+            f"'{target_col}' is not a column in the dataset. "
+            f"Available columns: {list(df.columns)}"
+        )
+    return target_col
